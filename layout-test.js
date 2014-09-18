@@ -577,10 +577,22 @@ if ( 'undefined' === typeof go_contentwidgets ) {
 	 * auto injects items in order
 	 */
 	go_contentwidgets.auto_inject = function() {
-		for ( var i = 0, length = go_contentwidgets.insert.length; i < length; i++ ) {
-			go_contentwidgets.calc();
-			go_contentwidgets.inject_item( go_contentwidgets.insert[ i ] );
-		}// end foreach
+		var gap = 0;
+		var start_at_gap = 0;
+
+		this.identify_blackouts();
+
+		for ( var i = 0, length = this.insert.length; i < length; i++ ) {
+			if ( ! start_at_gap ) {
+				this.calc();
+			}//end if
+
+			gap = this.inject_item( this.insert[ i ], start_at_gap );
+
+			if ( false !== gap ) {
+				start_at_gap = gap;
+			}
+		}// end for
 	};
 
 	/**
@@ -625,18 +637,15 @@ if ( 'undefined' === typeof go_contentwidgets ) {
 
 	go_contentwidgets.reset = function() {
 		this.$content.find( '.layout-box-thing' ).remove();
-		this.inventory = {
-			blackouts: [],
-			gaps: []
-		};
+		this.inventory.gaps = [];
 	};
 
 	go_contentwidgets.calc = function() {
 		go_contentwidgets.log( 'begin calc and reset' );
 		this.reset();
-		go_contentwidgets.log( 'end reset/begin identify blackouts' );
-		this.identify_blackouts();
-		go_contentwidgets.log( 'end identify blackouts/begin identify gaps' );
+		//go_contentwidgets.log( 'end reset/begin identify blackouts' );
+		//this.identify_blackouts();
+		go_contentwidgets.log( 'end reset/begin identify gaps' );
 		this.identify_gaps();
 		go_contentwidgets.log( 'end identify gaps and calc' );
 	};
@@ -705,6 +714,7 @@ if ( 'undefined' === typeof go_contentwidgets ) {
 					}//end if
 
 					gap = {};
+					console.log( 'creating overlay:', blackout.$el, start, gap_height, 'gap' );
 					gap.$overlay = this.overlay( blackout.$el, start, gap_height, 'gap' );
 					gap.$first_el = [];
 
@@ -767,25 +777,23 @@ if ( 'undefined' === typeof go_contentwidgets ) {
 		}//end else
 	};
 
-	go_contentwidgets.inject_item = function( item ) {
+	go_contentwidgets.inject_item = function( injectable, start_at_gap ) {
 		var i;
 		var length = 0;
-		var $element = null;
-		go_contentwidgets.log( 'injecting item' );
+		var element = null;
+		go_contentwidgets.log( 'injecting injectable' );
 
-		for ( i = 0, length = this.inventory.gaps.length; i < length; i++ ) {
+		for ( i = start_at_gap, length = this.inventory.gaps.length; i < length; i++ ) {
 			var gap = this.attributes( this.inventory.gaps[ i ].$overlay );
 			gap.$overlay = this.inventory.gaps[ i ].$overlay;
 			gap.$first_el = this.inventory.gaps[ i ].$first_el;
-			if ( gap.height > item.height ) {
-				$element = gap.$first_el;
+			if ( gap.height > injectable.height ) {
+				element = this.attributes( gap.$first_el );
 
-				if ( item.preferbottom ) {
-					// find the last element in the gap where item will fit
-					var next_element = this.attributes( $element );
-					while ( next_element.end <= gap.end && ( gap.end - next_element.start ) > item.height ) {
-						$element = next_element.$el;
-						next_element = this.attributes( $element.next() );
+				if ( injectable.preferbottom ) {
+					// find the last element in the gap where injectable will fit
+					while ( element.end <= gap.end && ( gap.end - element.start ) > injectable.height ) {
+						element = this.attributes( element.$el.next() );
 					}// end while
 				}//end if
 				else {
@@ -794,22 +802,81 @@ if ( 'undefined' === typeof go_contentwidgets ) {
 			}//end if
 		}//end for
 
-		if ( ! $element ) {
+		if ( ! element ) {
 			// Failed to inject
 			return false;
 		}// end if
 
 		$( document ).trigger( 'go-contentwidgets-injected', {
-			injected: item
+			injected: injectable
 		} );
 
-		$element.before( item.$el );
+		var element_before_inject = element;
+
+		element.$el.before( injectable.$el );
+
+		injectable.start = element_before_inject.start;
+		injectable.end = injectable.start + injectable.height;
+
+		var element_after_inject = this.attributes( element.$el );
+		var height_change = element_after_inject.end - element_before_inject.end;
+
+		console.log( 'injectable.start', injectable.start );
+		console.log( 'injectable.end', injectable.start + injectable.height );
+		console.log( 'injectable after insert', $.extend( {}, injectable ) );
+		console.log( 'height_change', height_change );
+		console.log( 'element_before_inject', $.extend( {}, element_before_inject ) );
+		console.log( 'element_after_inject', $.extend( {}, element_after_inject ) );
+
+		var added_blackout = false;
+
+		for ( var j = 0, length = this.inventory.blackouts.length; j < length; j++ ) {
+			if ( this.inventory.blackouts[ j ].start < element_before_inject.end ) {
+				continue;
+			}//end if
+
+			console.log( 'LKJDLFJFLKSDJFLSDKJFLDJFLDSJF' );
+
+			if ( ! added_blackout ) {
+				var splice_index = j;
+
+				if ( 0 > splice_index ) {
+					splice_index = 0;
+				}//end if
+
+				console.log( 'splice_index', splice_index );
+				console.log( 'blackouts', $.extend( {}, this.inventory.blackouts ) );
+				this.inventory.blackouts.splice( splice_index, 0, injectable );
+				console.log( 'blackouts after splicing', $.extend( {}, this.inventory.blackouts ) );
+				added_blackout = true;
+
+				j++;
+			}//end if
+
+			this.inventory.blackouts[ j ].start += height_change;
+			this.inventory.blackouts[ j ].end += height_change;
+
+		}//end for
+
+		/*
+		var next = this.attributes( $element.next() );
+		injectable = this.attributes( injectable.$el );
+		/*
+		while ( next.end < injectable.end ) {
+			next = this.attributes( $element.$el.next() );
+		}//end while
+		*/
+
+		go_contentwidgets.log( 'end injecting injectable' );
 
 		if ( this.single_use_gap_per_pass ) {
 			this.inventory.gaps.splice( i, 1 );
+
+			return i >= this.inventory.gaps.length ? 0 : i;
 		}//end if
 
-		go_contentwidgets.log( 'end injecting item' );
+		// if we aren't doing the single-use-gap-per-pass strategy, always start at gap 0
+		return 0;
 	};
 
 	$( function() {
